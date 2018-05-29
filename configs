@@ -1,0 +1,214 @@
+------------------
+input {
+ beats {
+   port => 5044
+ }
+}
+
+filter {
+  grok {
+    match => { "message" => "%{MONTHDAY:mdate}-%{MONTH:month}-%{YEAR:year}\ %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec}\ %{WORD:severity}\ %{GREEDYDATA:log_message}" }
+  }
+  mutate { 
+  add_field => {
+    "my_time_stamp" => "%{mdate}-%{month}-%{year} %{hour}:%{minute}:%{sec}"
+    }
+  }
+    date {
+    match => ["my_time_stamp", "dd-MMM-yyyy HH:mm:ss.SSS"]
+    }
+ mutate {
+   remove_field => [ "my_time_stamp", "hour", "minute", "sec", "mdate" ]
+   } 
+}
+
+output { 
+  elasticsearch {
+        hosts => ["http://localhost:9200"]
+        index => ["accesslogs-%{+YYYY.MM.dd}"]}
+}
+
+
+------------------------
+
+input {
+  beats {
+    port => 5044
+    host => "0.0.0.0"
+  }
+}
+
+filter {
+   grok {
+        match => { "message" => ["%{MONTH} %{MONTHDAY} %{TIME} %{HOSTNAME} %{WORD}: %{GREEDYDATA}"] }
+   }
+}
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["accesslogs-%{+YYYY.MM.dd}"]
+  }
+}
+
+-------------------------
+
+
+input {
+  beats {
+    port => 5044
+    host => "0.0.0.0"
+    tag => "system"
+  }
+
+ beats {
+    port => 5045
+    host => "0.0.0.0"
+    tag => "catalina"
+  }
+}
+
+filter {
+   if "catalina" in [tags] {
+   grok {
+        match => { "message" => "%{MONTHDAY:mdate}-%{MONTH:month}-%{YEAR:year}\ %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec}\ %{WORD:severity}\ %{GREEDYDATA:log_message}" }
+        }
+  }  else if "system" in [tags] {  
+      grok {
+	match => { "message" => ["%{MONTH:month} %{MONTHDAY:mdate} %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec} %{HOSTNAME:hostname} %{WORD:servicename}: %{GREEDYDATA:log_message}"] }
+   }
+
+ }
+}
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["accesslogs-%{+YYYY.MM.dd}"]
+  }
+}
+
+
+--------------------
+
+
+--------------
+catalina.conf
+---------------
+
+input {
+  beats {
+    port => 5044
+    host => "0.0.0.0"
+  }
+}
+
+filter {
+   grok {
+      match => { "message" => "%{MONTHDAY:mdate}-%{MONTH:month}-%{YEAR:year}\ %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec}\ %{WORD:severity}\ %{GREEDYDATA:log_message}" } 
+   }
+}
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["catalina-%{+YYYY.MM.dd}"]
+  }
+}
+
+
+
+---------------
+system.conf
+--------------
+
+input {
+  beats {
+    port => 5044
+    host => "0.0.0.0"
+  }
+}
+
+filter {
+   grok {
+        match => { "message" => ["%{MONTH} %{MONTHDAY} %{TIME} %{HOSTNAME} %{WORD}: %{GREEDYDATA}"] }
+   }
+}
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["accesslogs-%{+YYYY.MM.dd}"]
+  }
+}
+
+
+-------------------
+------------------
+TRY THIS FOR MULTI INDEXES
+----------------
+filebeat.prospectors:
+- type: log
+  paths:
+    - /var/log/messages
+  fields:
+    logtype: syslog
+- type: log
+  paths:
+    - /var/log/httpd/access_log
+  fields:
+    logtype: httpd 
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+setup.template.settings:
+  index.number_of_shards: 3
+setup.kibana:
+output.logstash:
+  hosts: ["localhost:5044"]
+------------------------------------
+MULTI INDEX CORRESPONDING LOGSTASH.
+-------------------------------------
+
+input {
+  beats {
+    port => 5044
+    host => "0.0.0.0"
+  }
+}
+
+filter {
+  if [fields][logtype] == "syslog" {
+   grok {
+        match => { "message" => ["%{MONTH} %{MONTHDAY} %{TIME} %{HOSTNAME} %{WORD}: %{GREEDYDATA}"] }
+    }
+   mutate {
+    add_field => [ "index_name", "%{[fields][logtype]}" ]
+  }
+   }
+  else if [fields][logtype] == "httpd" {
+  grok {
+        match => { "message" => ["%{MONTH} %{MONTHDAY} %{TIME} %{HOSTNAME} %{WORD}: %{GREEDYDATA}"] }
+    }
+   mutate {
+    add_field => [ "index_name", "%{[fields][logtype]}" ]
+  }
+   }
+
+}
+
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["%{index_name}-%{+YYYY.MM.dd}"]
+  }
+}
+
+-------------------------------------------------------
+
