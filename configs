@@ -212,3 +212,44 @@ output {
 
 -------------------------------------------------------
 
+
+Multiline Enable in Filebeat
+------------------------------------------------------
+
+filebeat.prospectors:
+
+# Each - is a prospector. Most options can be set at the prospector level, so
+# you can use different prospectors for various configurations.
+# Below are the prospector specific configurations.
+
+- type: log
+  paths:
+    - /var/log/messages
+  fields:
+    logtype: syslog
+
+- type: log
+  paths:
+    - /opt/apache-tomcat-9.0.6/logs/catalina.out
+  fields:
+    logtype: catalina 
+  multiline.pattern: '^java'
+  multiline.negate: false 
+  multiline.match: after
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
