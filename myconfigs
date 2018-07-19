@@ -1,0 +1,62 @@
+FileBeat Example for Multiple Files.
+
+-------------
+filebeat.prospectors:
+- type: log
+  paths:
+    - /var/log/messages
+  fields:
+    logtype: system 
+- type: log
+  paths:
+    - /home/ec2-user/tomcat/logs/catalina.out
+  fields:
+    logtype: tomcat 
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+setup.template.settings:
+  index.number_of_shards: 3
+setup.kibana:
+output.logstash:
+  hosts: ["elk:5044"]
+-----------------
+
+Configuration of Logstash for multi lines
+-----------------
+
+input {
+ beats {
+   port => 5044
+ }
+}
+
+filter {
+  if [fields][logtype] == "system" {
+   grok {
+        match => { "message" => ["%{MONTH:month} %{MONTHDAY:mdate} %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec} %{HOSTNAME:hostname} %{WORD:servicename}: %{GREEDYDATA:log_message}"] }
+    }
+   mutate {
+    add_field => [ "index_name", "%{[fields][logtype]}" ]
+  }
+   }
+  else if [fields][logtype] == "tomcat" {
+  grok {
+        match => { "message" => "%{MONTHDAY:mdate}-%{MONTH:month}-%{YEAR:year}\ %{HOUR:hour}:%{MINUTE:minute}:%{SECOND:sec}\ %{WORD:severity}\ %{GREEDYDATA:log_message}" } 
+    }
+   mutate {
+    add_field => [ "index_name", "%{[fields][logtype]}" ]
+  }
+   }
+
+}
+
+
+output {
+  elasticsearch {
+    hosts => localhost
+    manage_template => false
+    index => ["%{index_name}-%{+YYYY.MM.dd}"]
+  }
+}
